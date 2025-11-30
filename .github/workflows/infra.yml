@@ -1,4 +1,4 @@
-name: Terraform CI/CD 
+name: Terraform CI/CD
 
 on:
   push:
@@ -7,6 +7,9 @@ on:
   pull_request:
     branches:
       - main
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   terraform:
@@ -14,43 +17,24 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      AWS_REGION: 'us-east-1'
+      AWS_REGION: 'us-east-1' # Set your desired AWS region
       TF_VERSION: '1.4.0'
-      TF_LOG: ERROR
+      TF_LOG: ERROR           # Set to DEBUG for more verbose logs
 
     steps:
       - name: 'Checkout GitHub repository'
         uses: actions/checkout@v4
 
-      # --------- S3 BACKEND AUTH -----------------
       - name: 'Configure AWS credentials'
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      # -------------------------------------------
 
       - name: 'Set up Terraform'
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: ${{ env.TF_VERSION }}
-
-      # --------- Terraform Backend Config ---------
-      - name: 'Setup Terraform Backend'
-        run: |
-          cat << EOF > backend.tf
-          terraform {
-            backend "s3" {
-              bucket         = "dsg-terraform-state"          # <-- replace with your bucket
-              key            = "global/terraform.tfstate"
-              region         = "us-east-1"
-              dynamodb_table = "terraform-locks"              # <-- replace if you use a lock table
-              encrypt        = true
-            }
-          }
-          EOF
-      # --------------------------------------------
 
       - name: 'Terraform Init'
         run: terraform init -upgrade
@@ -64,15 +48,15 @@ jobs:
       - name: 'Terraform Plan'
         run: terraform plan -out=tfplan
 
-      #- name: 'Terraform Apply'
-      #  if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      #  run: terraform apply -auto-approve tfplan
-      #  env:
-      #    TF_LOG: ERROR
+      - name: 'Terraform Apply'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_LOG: ERROR
 
-      # Destroy Steps
-      - name: 'Terraform Plan Destroy'
-        run: terraform plan -destroy -out=tfplan-destroy
+    #   # Uncomment these if you want destroy steps
+    #   - name: 'Terraform Plan Destroy'
+    #     run: terraform plan -destroy -out=tfplan-destroy
 
-      - name: 'Terraform Apply Destroy'
-        run: terraform apply -auto-approve tfplan-destroy
+    #   - name: 'Terraform Apply Destroy'
+    #     run: terraform apply -auto-approve tfplan-destroy
